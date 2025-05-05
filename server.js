@@ -3,6 +3,7 @@ const { OpenAI } = require('openai');
 const dotenv = require('dotenv');
 const path = require('path');
 const bodyParser = require('body-parser');
+const fs = require('fs');
 
 // Load environment variables
 dotenv.config();
@@ -15,6 +16,9 @@ const PORT = process.env.PORT || 3000;
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
+
+// Load system prompt from file
+const systemPrompt = fs.readFileSync('systemprompt.txt', 'utf8');
 
 // Middleware
 app.use(bodyParser.json());
@@ -30,9 +34,9 @@ app.post('/api/chat', async (req, res) => {
     }
     
     const completion = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
+      model: 'gpt-4.1-2025-04-14',
       messages: [
-        { role: 'system', content: 'You are a helpful assistant.' },
+        { role: 'system', content: systemPrompt },
         { role: 'user', content: userMessage }
       ],
     });
