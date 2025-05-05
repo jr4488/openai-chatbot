@@ -25,6 +25,8 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Scroll to the bottom of the chat
         chatMessages.scrollTop = chatMessages.scrollHeight;
+        
+        return messageContent; // Return the content element for streaming updates
     }
 
     // Function to handle sending a message
@@ -36,46 +38,103 @@ document.addEventListener('DOMContentLoaded', () => {
         addMessage(message, true);
         userInput.value = '';
         
-        try {
-            // Show loading indicator
-            const loadingDiv = document.createElement('div');
-            loadingDiv.className = 'message bot';
-            const loadingContent = document.createElement('div');
-            loadingContent.className = 'message-content';
-            loadingContent.textContent = 'Typing...';
-            loadingDiv.appendChild(loadingContent);
-            chatMessages.appendChild(loadingDiv);
-            
-            // Send request to OpenAI API
-            const response = await fetch('/api/chat', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ message }),
-            });
-            
+        // Create bot message container with loading indicator
+        const botDiv = document.createElement('div');
+        botDiv.className = 'message bot';
+        
+        const botContent = document.createElement('div');
+        botContent.className = 'message-content';
+        botContent.textContent = 'Typing...';
+        
+        botDiv.appendChild(botContent);
+        chatMessages.appendChild(botDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        
+        let fullResponse = '';
+        
+        // Send the message to the server with streaming response
+        fetch('/api/chat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ message }),
+        }).then(response => {
             if (!response.ok) {
                 throw new Error('Failed to get response');
             }
             
-            const data = await response.json();
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
             
-            // Remove loading indicator
-            chatMessages.removeChild(loadingDiv);
-            
-            // Add bot response to chat
-            addMessage(data.response);
-        } catch (error) {
-            console.error('Error:', error);
-            // Remove loading indicator if it exists
-            const loadingDiv = document.querySelector('.message.bot:last-child');
-            if (loadingDiv && loadingDiv.textContent.includes('Typing...')) {
-                chatMessages.removeChild(loadingDiv);
+            // Function to read stream chunks
+            function readChunk() {
+                return reader.read().then(({ value, done }) => {
+                    if (done) {
+                        console.log('Stream complete');
+                        return;
+                    }
+                    
+                    const chunk = decoder.decode(value, { stream: true });
+                    // Process the chunk (which might contain multiple SSE messages)
+                    const lines = chunk.split('\n\n');
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.substring(6));
+                                
+                                if (data.content) {
+                                    // If this is the first chunk, clear the "Typing..." text
+                                    if (fullResponse === '') {
+                                        botContent.innerHTML = '';
+                                    }
+                                    
+                                    // Append new content
+                                    fullResponse += data.content;
+                                    
+                                    // Format with paragraph breaks
+                                    const formattedResponse = fullResponse
+                                        .replace(/&/g, '&amp;')
+                                        .replace(/</g, '&lt;')
+                                        .replace(/>/g, '&gt;')
+                                        .replace(/\n/g, '<br>');
+                                    
+                                    botContent.innerHTML = formattedResponse;
+                                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                                }
+                                
+                                if (data.error) {
+                                    console.error('Error in stream:', data.error);
+                                    botContent.innerHTML = 'Sorry, I encountered an error. Please try again.';
+                                    return; // Stop reading chunks
+                                }
+                                
+                                if (data.done) {
+                                    console.log('Stream done');
+                                    return; // Stop reading chunks
+                                }
+                            } catch (error) {
+                                console.error('Error parsing SSE data:', error);
+                            }
+                        }
+                    }
+                    
+                    // Continue reading chunks
+                    return readChunk();
+                }).catch(error => {
+                    console.error('Error reading stream:', error);
+                    if (fullResponse === '') {
+                        botContent.innerHTML = 'Sorry, I encountered an error. Please try again.';
+                    }
+                });
             }
             
-            addMessage('Sorry, I encountered an error. Please try again.');
-        }
+            // Start reading the stream
+            return readChunk();
+        }).catch(error => {
+            console.error('Fetch error:', error);
+            botContent.innerHTML = 'Sorry, I encountered an error. Please try again.';
+        });
     }
 
     // Event listeners
