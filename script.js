@@ -10,7 +10,15 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const messageContent = document.createElement('div');
         messageContent.className = 'message-content';
-        messageContent.textContent = message;
+        
+        // Convert newlines to <br> tags for proper paragraph formatting
+        const formattedMessage = message
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/\n/g, '<br>');
+        
+        messageContent.innerHTML = formattedMessage;
         
         messageDiv.appendChild(messageContent);
         chatMessages.appendChild(messageDiv);
